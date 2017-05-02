@@ -36,8 +36,13 @@ def get_db_conn():
 def is_empty(conn, sql):
     conn.execute(sql)
     resp = conn.fetchone()
-    print(resp)
-    return resp == 0
+    return resp[0] == 0
+
+
+def get_all(conn, sql):
+    conn.execute(sql)
+    return conn.fetchall()
+
 
 def get_datas():
     """

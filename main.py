@@ -36,11 +36,25 @@ def extrari_inscricao(inscricao_full):
     return saida
 
 
+def preenche_vazio(conn, lst, template, sql_topo):
+    for i in lst:
+        meio_sql = template.format(*i)
+        sql = sql_topo + meio_sql
+        conn.execute(sql)
+
+
+def excluir(conn, lst, tabela):
+    template = 'DELETE FROM `{}` WHERE `id` in ({})'
+    ids = [str(i[0]) for i in lst]
+
+    preids =  ", ".join(ids)
+    sql = template.format(tabela, preids)
+    conn.execute(sql)
+
+
 def preenche_evento():
     """
-
-    TODO
-    atualizar os eventos
+    Busca no site e atauliza a tabela de eventos
     """
     resposta = requests.get(url_eventos)
 
@@ -83,13 +97,82 @@ def preenche_evento():
     template = "({}, '{}', '{}', '{}', '{}', '{}', {});"
     if len(lst_saida) > 0:
         conn = utils.get_db_conn()
+        lst_pagina = sorted(lst_saida, key=lambda elemento: elemento[2])
+        nomes_pagina = [i[2] for i in lst_pagina]
         try:
             with conn.cursor() as cursor:
-                top_sql = "INSERT INTO `evento` VALUES "
-                for i in lst_saida:
-                    meio_sql = template.format(*i)
-                    sql = top_sql + meio_sql
-                    cursor.execute(sql)
+                sql_vazio = "SELECT count(*) FROM `evento`"
+                if utils.is_empty(cursor, sql_vazio):
+                    sql_inserir = "INSERT INTO `evento` VALUES "
+                    preenche_vazio(cursor, lst_saida, template, sql_inserir)
+                else:
+                    # atulizacao, dados ja existem
+                    sql_todos = "SELECT * FROM `evento` ORDER BY `nome`"
+                    nome_todos = "SELECT `nome` FROM `evento` ORDER BY `nome`"
+                    lst_nome_todos = utils.get_all(cursor, nome_todos)
+                    lst_nome_todos = [i[0] for i in lst_nome_todos]
+                    lst_todos = utils.get_all(cursor, sql_todos)
+                    
+                    # atualizar
+                    lst_atualizar = []
+                    lst_inserir = []
+                    for k in lst_pagina:
+                        print(repr(k[2]))
+                        if k[2] in lst_nome_todos:
+                            lst_atualizar.append(k)
+                        else:
+                            lst_inserir.append(k)
+
+                    # remover
+                    lst_remover = []
+                    for k1 in lst_todos:
+                        if k1[2] not in nomes_pagina:
+                            lst_remover.append(k1)
+
+                    if len(lst_remover):
+                        print("exlui", len(lst_remover))
+                        excluir(cursor, lst_remover, 'evento')
+                        conn.commit()
+                        lst_todos = utils.get_all(cursor, sql_todos)
+
+                    # datas e vagas
+                    lst_nomes = [g[2] for g in lst_todos]
+                    chaves = {g[2]: g[0] for g in lst_todos}
+
+                    if len(lst_atualizar):  # elmentos que vem da pagina
+                        sql = "UPDATE `evento` SET `inicio_inscricao`='{}'" + \
+                            ", `fim_inscricao`='{}', `link`='{}',`vagas`={}" +\
+                            " WHERE `id`={}"
+
+                        for i in lst_atualizar:
+                            tmp_lst = i[3:] + [chaves[i[2]]]
+                            sql_completo = sql.format(*tmp_lst)
+                            print(sql_completo)
+                            cursor.execute(sql_completo)
+
+                    if len(lst_inserir):
+                        print("novos", len(lst_inserir))
+                        sql_inserir = "INSERT INTO `evento` VALUES "
+                        preenche_vazio(cursor, lst_inserir, template, sql_inserir)
+
+
+
+                    """
+                    meu proprio controle:
+                        remover eventos que nao tem vaga, ou terminou a data de inscricao
+                    casos especiais:
+                        A evento novo na pagina
+                        B evento nao existe mais na pagina
+                    *. trazer os eventos ordenas por nome. (ordernar os eventos aqui tmb)
+                    (essa parte vai ser igual ao do feed)
+                    A.  not (nome in lst_nomes) => elemento novo
+                    B.  banco = banco[:len(pagina)] # oque sobra do tamanho da pagina eh pq foi removido
+
+
+                    1. controle da pagina
+                    2. meu controle
+
+                    """
             conn.commit()
 
         finally:
@@ -130,17 +213,16 @@ def preenche_feed():
         conn = utils.get_db_conn()
         try:
             with conn.cursor() as cursor:
-                top_sql = "INSERT INTO `feed` VALUES "
-                for i in lst_saida:
-                    meio_sql = template.format(*i)
-                    sql = top_sql + meio_sql
-                    cursor.execute(sql)
+                sql_vazaio = "SELECT count(*) FROM `feed`"
+                if utils.is_empty(cursor, sql_vazaio):
+                    sql_inserir = "INSERT INTO `feed` VALUES "
+                    preenche_vazio(cursor, lst_saida, template, sql_inserir)
+                else:
+                    pass
             conn.commit()
 
         finally:
             conn.close()
-
-
 
 if __name__ == '__main__':
     preenche_evento()
