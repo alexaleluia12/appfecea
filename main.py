@@ -54,12 +54,14 @@ def excluir(conn, lst, tabela):
 
 def preenche_evento():
     """
-    Busca no site e atauliza a tabela de eventos
+    Busca no site e atualiza a tabela de eventos
     """
     resposta = requests.get(url_eventos)
 
     lst_saida = []
+    ir = False
     if resposta.ok:
+        ir = True
         parse = bs4.BeautifulSoup(resposta.text, 'html.parser')
         lst = parse.find_all("table")
         filtro = []
@@ -93,9 +95,13 @@ def preenche_evento():
 
                 lst_saida.append(["NULL", agora, nome, inicio_inscricao,
                                   fim_inscricao, link, vagas])
+    else:
+        print("pagina forma do ar")
+        return
 
     template = "({}, '{}', '{}', '{}', '{}', '{}', {});"
-    if len(lst_saida) > 0:
+    if ir:
+        print("-- evento")
         conn = utils.get_db_conn()
         lst_pagina = sorted(lst_saida, key=lambda elemento: elemento[2])
         nomes_pagina = [i[2] for i in lst_pagina]
@@ -112,12 +118,12 @@ def preenche_evento():
                     lst_nome_todos = utils.get_all(cursor, nome_todos)
                     lst_nome_todos = [i[0] for i in lst_nome_todos]
                     lst_todos = utils.get_all(cursor, sql_todos)
-                    
+
                     # atualizar
                     lst_atualizar = []
                     lst_inserir = []
                     for k in lst_pagina:
-                        print(repr(k[2]))
+                        # print(repr(k[2]))
                         if k[2] in lst_nome_todos:
                             lst_atualizar.append(k)
                         else:
@@ -139,22 +145,22 @@ def preenche_evento():
                     lst_nomes = [g[2] for g in lst_todos]
                     chaves = {g[2]: g[0] for g in lst_todos}
 
-                    if len(lst_atualizar):  # elmentos que vem da pagina
+                    if len(lst_atualizar):  # elementos que vem da pagina
                         sql = "UPDATE `evento` SET `inicio_inscricao`='{}'" + \
                             ", `fim_inscricao`='{}', `link`='{}',`vagas`={}" +\
                             " WHERE `id`={}"
 
+                        print("atualiza", len(lst_atualizar))
                         for i in lst_atualizar:
                             tmp_lst = i[3:] + [chaves[i[2]]]
                             sql_completo = sql.format(*tmp_lst)
-                            print(sql_completo)
+                            # print(sql_completo)
                             cursor.execute(sql_completo)
 
                     if len(lst_inserir):
                         print("novos", len(lst_inserir))
                         sql_inserir = "INSERT INTO `evento` VALUES "
                         preenche_vazio(cursor, lst_inserir, template, sql_inserir)
-
 
 
                     """
@@ -182,13 +188,14 @@ def preenche_evento():
 def preenche_feed():
     """Feito para buscar dados do feed. Lida com dados antigos
 
-    TODO:
-    atualizacao do feed
+    caso um elemento ja exista na pagina ele nao é atualizado
     """
     resposta = requests.get(url_feed)
 
     lst_saida = []
+    ir = False
     if resposta.ok:  # extrai o conteudo da pagina
+        ir = True
         parse = bs4.BeautifulSoup(resposta.text, 'html.parser')
         # /html/body/div/div/div[2]/div[2]/div/ul/li[] xpath
         div_principal = parse.find(id="main-area-1")
@@ -206,23 +213,62 @@ def preenche_feed():
             link = k.parent.get('href')  # pode nao existir
             link = link if link else "NULL"
             lst_saida.append(["NULL", agora, texto, link_img, link])
+    else:
+        print("pagina fora do ar")
+        return
 
     conn = None
     template = "({}, '{}', '{}', '{}', '{}');"
-    if len(lst_saida):
+    if ir:
+        print("-- feed")
         conn = utils.get_db_conn()
+        lst_pagina = lst_saida
+        nomes_pagina = [i[2] for i in lst_pagina]
         try:
             with conn.cursor() as cursor:
-                sql_vazaio = "SELECT count(*) FROM `feed`"
-                if utils.is_empty(cursor, sql_vazaio):
+
+                sql_vazio = "SELECT count(*) FROM `feed`"
+                if utils.is_empty(cursor, sql_vazio):
                     sql_inserir = "INSERT INTO `feed` VALUES "
                     preenche_vazio(cursor, lst_saida, template, sql_inserir)
                 else:
-                    pass
+                    # atulizacao, dados ja existem
+                    sql_todos = "SELECT * FROM `feed` ORDER BY `texto`"
+                    nome_todos = "SELECT `texto` FROM `feed` ORDER BY `texto`"
+                    lst_nome_todos = utils.get_all(cursor, nome_todos)
+                    lst_nome_todos = [i[0] for i in lst_nome_todos]
+                    lst_todos = utils.get_all(cursor, sql_todos)
+
+                    # apenas insere ou exclui nao atualiza
+                    lst_inserir = []
+                    for k in lst_pagina:
+                        # print(repr(k[2]))
+                        if k[2] not in lst_nome_todos:
+                            lst_inserir.append(k)
+
+                    # remover
+                    lst_remover = []
+                    for k1 in lst_todos:
+                        if k1[2] not in nomes_pagina:
+                            lst_remover.append(k1)
+
+                    if len(lst_remover):
+                        print("exlui", len(lst_remover))
+                        excluir(cursor, lst_remover, 'feed')
+                        conn.commit()
+                        lst_todos = utils.get_all(cursor, sql_todos)
+
+
+                    if len(lst_inserir):
+                        print("novos", len(lst_inserir))
+                        sql_inserir = "INSERT INTO `feed` VALUES "
+                        preenche_vazio(cursor, lst_inserir, template, sql_inserir)
+
             conn.commit()
 
         finally:
             conn.close()
 
 if __name__ == '__main__':
+    preenche_feed()
     preenche_evento()

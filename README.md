@@ -1,9 +1,8 @@
-* feature massa:
-  ser notificado quando ocorrer um evento relacionado ao curso
+# Bot for [Unespar-Apucarana](http://www.fecea.br/) takes feed and event then send to database.
 
 
-fazer:
-  remover eventos que nao tem vagas/terminou a inscricao *
-  ataulizar feed:
-    assumindo que ja existem elementos no banco, quando for buscar mais.
-    Trouse x elmentos; Y novos, Z ja tinha o que sobra exclui da base
+# To use
+1. create mysql database from ```schema.sql```
+2. set values from ```banco-dev.json```
+3. install Python requirements
+4. run ```man.py```
